@@ -495,11 +495,65 @@ function newsfreak_rest_prepare_event($data, $post, $request)
     // Add author info
     $_data['custom']['author']['name'] = get_author_name($_data['author']);
     $_data['custom']['author']['avatar'] = get_avatar_url($_data['author']);
+    // Add event title
+    $_data['title'] = get_post_meta($post->ID, 'event_title', true) ?: get_the_title($post->ID);
     // Add event meta fields
     $_data['custom']['start_date'] = get_post_meta($post->ID, 'start_date', true);
     $_data['custom']['end_date'] = get_post_meta($post->ID, 'end_date', true);
     $_data['custom']['location'] = get_post_meta($post->ID, 'location', true);
+    $_data['custom']['meeting_type'] = get_post_meta($post->ID, 'meeting_type', true);
+    $_data['custom']['categories'] = wp_get_post_terms($post->ID, 'category', array('fields' => 'names'));
     $_data['custom']['description'] = get_post_meta($post->ID, 'description', true);
+    $_data['custom']['event_title'] = get_post_meta($post->ID, 'event_title', true);
+    $_data['custom']['all_day'] = get_post_meta($post->ID, 'all_day', true);
+    $_data['custom']['time_zone'] = get_post_meta($post->ID, 'time_zone', true);
+    $_data['custom']['committees'] = get_post_meta($post->ID, 'committees', false);
+    $_data['custom']['notification_email'] = get_post_meta($post->ID, 'notification_email', true);
+    $_data['custom']['notification_push'] = get_post_meta($post->ID, 'notification_push', true);
+    $_data['custom']['map_link'] = get_post_meta($post->ID, 'map_link', true);
     $data->data = $_data;
     return $data;
+}
+
+// Send notification when a new Event is published
+add_action('publish_event', 'newsfreak_send_event_notification', 10, 2);
+
+function newsfreak_send_event_notification($ID, $post) {
+    // Only send notification for new events (not updates)
+    if (get_post_meta($ID, '_event_notification_sent', true)) {
+        return;
+    }
+    $event_title = get_post_meta($ID, 'event_title', true) ?: get_the_title($ID);
+    $start_date = get_post_meta($ID, 'start_date', true);
+    $location = get_post_meta($ID, 'location', true);
+    $meeting_type = get_post_meta($ID, 'meeting_type', true);
+    $meeting_url = get_post_meta($ID, 'meeting_url', true);
+    $banner_id = get_post_meta($ID, 'banner', true);
+    $banner_url = $banner_id ? wp_get_attachment_url($banner_id) : '';
+
+    $message = 'New Event: ' . $event_title;
+    if ($start_date) {
+        $message .= ' on ' . date('F j, Y', strtotime($start_date));
+    }
+    if ($location) {
+        $message .= ' at ' . $location;
+    }
+    if ($meeting_type === 'virtual' || $meeting_type === 'hybrid') {
+        $message .= $meeting_url ? ' (Join: ' . $meeting_url . ')' : '';
+    }
+
+    // Prepare OneSignal notification payload
+    $fields = array(
+        'headings' => array('en' => 'Upcoming Event'),
+        'contents' => array('en' => $message),
+        'data' => array(
+            'event_id' => $ID,
+            'banner' => $banner_url,
+            'meeting_type' => $meeting_type,
+            'meeting_url' => $meeting_url
+        )
+    );
+    // You may need to add your OneSignal integration here
+    do_action('onesignal_send_notification', $fields, 'publish', '', $post);
+    update_post_meta($ID, '_event_notification_sent', 1);
 }
